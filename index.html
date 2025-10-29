@@ -1,0 +1,152 @@
+<!--
+  간단한 평면 액션(스트리트 파이터 스타일) HTML 게임
+  개발자: 21018 이승욱
+  사용법: 이 파일을 .html로 저장한 뒤 브라우저로 열면 됩니다.
+-->
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>플랫 파이트 - 개발자: 21018 이승욱</title>
+  <style>
+    :root{--bg:#1b1f2a;--ground:#2b2f3a;--ui:#e6eef8}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ui)}
+    .wrap{display:flex;flex-direction:column;height:100vh}
+    header{padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:space-between}
+    header h1{font-size:18px;margin:0}
+    main{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column}
+    #game{background:linear-gradient(180deg,var(--bg),#0f1116);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6);padding:12px;position:relative}
+    canvas{display:block;background:linear-gradient(#81a1c1 0%, #5b7290 60%);border-radius:6px}
+    .healthbar{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:30px;align-items:center;color:white;font-weight:600}
+    .barwrap{width:300px;height:16px;background:rgba(255,255,255,0.2);border-radius:8px;overflow:hidden}
+    .barinner{height:100%;background:linear-gradient(90deg,#ef5350,#ff8a65);width:100%;transition:width 0.2s}
+    .barinner2{height:100%;background:linear-gradient(90deg,#42a5f5,#90caf9);width:100%;transition:width 0.2s}
+    .gameover{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:36px;color:white;font-weight:700;display:none;text-align:center}
+    footer{padding:8px 12px;font-size:13px;color:rgba(230,238,248,0.8);display:flex;justify-content:space-between;align-items:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>플랫 파이트 — 총격전 평면 액션 (2단 점프 가능)</h1>
+      <div><span class="credit">개발자: 21018 이승욱</span></div>
+    </header>
+    <main>
+      <div id="game">
+        <div class="healthbar">
+          <div>Player1</div>
+          <div class="barwrap"><div id="bar1" class="barinner"></div></div>
+          <div class="vs">VS</div>
+          <div class="barwrap"><div id="bar2" class="barinner2"></div></div>
+          <div>Player2</div>
+        </div>
+        <canvas id="canvas" width="800" height="360"></canvas>
+        <div id="gameover" class="gameover"></div>
+        <div style="margin-top:8px;font-size:13px;color:rgba(230,238,248,0.8)">컨트롤 — 플레이어1: A D 좌/우, W 점프, S 발사 | 플레이어2: ← → 좌/우, ↑ 점프, ↓ 발사 | R: 재시작</div>
+      </div>
+    </main>
+    <footer>
+      <div>게임 종료 & 재시작 기능 추가 버전</div>
+      <div>개발자: <strong>21018 이승욱</strong></div>
+    </footer>
+  </div>
+
+  <script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const bar1 = document.getElementById('bar1');
+  const bar2 = document.getElementById('bar2');
+  const gameoverText = document.getElementById('gameover');
+  const WIDTH = canvas.width; const HEIGHT = canvas.height;
+  const GRAVITY = 0.8; const GROUND_Y = HEIGHT - 60;
+  let gameOver = false;
+
+  class Bullet {
+    constructor(x, y, dir, color){
+      this.x = x; this.y = y; this.dir = dir; this.speed = 8 * dir;
+      this.width = 24; this.height = 10; this.color = color; this.active = true;
+    }
+    update(){ this.x += this.speed; if(this.x < 0 || this.x > WIDTH) this.active = false; }
+    draw(){ ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.width, this.height); }
+  }
+
+  class Fighter {
+    constructor(x, color){
+      this.x = x; this.y = GROUND_Y; this.vx = 0; this.vy = 0;
+      this.width = 50; this.height = 70; this.color = color; this._face = 1;
+      this.health = 100; this.reload = 0; this.jumpCount = 0;
+    }
+    rect(){return {x:this.x - this.width/2, y:this.y - this.height, w:this.width, h:this.height}};
+    applyPhysics(){
+      this.vy += GRAVITY; this.y += this.vy; this.x += this.vx;
+      if(this.y >= GROUND_Y){ this.y = GROUND_Y; this.vy = 0; this.jumpCount = 0; }
+      if(this.x < 40) this.x = 40; if(this.x > WIDTH-40) this.x = WIDTH-40;
+      if(this.reload>0) this.reload--;
+    }
+    draw(){ const r=this.rect(); ctx.fillStyle=this.color; ctx.fillRect(r.x, r.y, r.w, r.h); }
+    jump(){ if(this.jumpCount<2){ this.vy=-14; this.jumpCount++; } }
+    shoot(bullets){ if(this.reload>0) return; const dir=this._face; const bx=this.x+dir*(this.width/2+8); const by=this.y-this.height/2; bullets.push(new Bullet(bx,by,dir,this.color)); this.reload=25; }
+  }
+
+  let p1, p2, bullets, keys;
+
+  function init(){
+    p1 = new Fighter(150,'#ef5350');
+    p2 = new Fighter(WIDTH-150,'#42a5f5');
+    bullets = [];
+    keys = {};
+    gameOver = false;
+    gameoverText.style.display = 'none';
+    bar1.style.width = '100%';
+    bar2.style.width = '100%';
+  }
+
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if(gameOver && k==='r'){ init(); return; }
+    if(gameOver) return;
+    keys[k] = true;
+    if(k==='w') p1.jump();
+    if(k==='arrowup') p2.jump();
+  });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+  function checkHits(){
+    for(const b of bullets){
+      if(!b.active) continue;
+      const target = (b.color==='#ef5350'?p2:p1);
+      const r = target.rect();
+      if(b.x<r.x+r.w && b.x+b.width>r.x && b.y<r.y+r.h && b.y+b.height>r.y){
+        target.health -= 10; if(target.health < 0) target.health = 0; b.active = false;
+        if(target.health === 0){
+          gameOver = true;
+          const winner = (target===p1)?'Player2':'Player1';
+          gameoverText.innerHTML = `${winner} 승리!<br><small>R 키로 재시작</small>`;
+          gameoverText.style.display = 'block';
+        }
+      }
+    }
+  }
+
+  function update(){
+    if(gameOver) return;
+    const speed = 4.8;
+    p1.vx=0; if(keys['a']){p1.vx=-speed;p1._face=-1;} if(keys['d']){p1.vx=speed;p1._face=1;} if(keys['s'])p1.shoot(bullets);
+    p2.vx=0; if(keys['arrowleft']){p2.vx=-speed;p2._face=-1;} if(keys['arrowright']){p2.vx=speed;p2._face=1;} if(keys['arrowdown'])p2.shoot(bullets);
+    p1.applyPhysics(); p2.applyPhysics(); for(const b of bullets)b.update(); checkHits();
+    for(let i=bullets.length-1;i>=0;i--) if(!bullets[i].active) bullets.splice(i,1);
+    bar1.style.width=p1.health+'%'; bar2.style.width=p2.health+'%';
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,WIDTH,HEIGHT);
+    ctx.fillStyle='#2b2f3a'; ctx.fillRect(0,GROUND_Y,WIDTH,HEIGHT-GROUND_Y);
+    p1.draw(); p2.draw(); for(const b of bullets)b.draw();
+  }
+
+  function loop(){ update(); draw(); requestAnimationFrame(loop); }
+  init(); loop();
+  </script>
+</body>
+</html>
